@@ -1,5 +1,7 @@
 // 画面：#/ が一覧、#/s/<id> が詳細（#/s/<id>/<uuid> でその位置に飛ぶ）
 const app = document.getElementById("app");
+const sideEl = document.getElementById("side");
+const topEl = document.querySelector(".top");
 const summaryEl = document.getElementById("summary");
 const notifyBtn = document.getElementById("notify");
 
@@ -35,6 +37,7 @@ function vscodeHref(s) {
   if (s.ssh) return `vscode://vscode-remote/ssh-remote+${encodeURIComponent(s.ssh)}${encodeURI(path)}`;
   return null;
 }
+const statusLabel = (s) => STATUS[s.status] + (s.reason && REASON[s.reason] ? `・${REASON[s.reason]}` : "");
 const multi = () => (state.list?.machines?.length ?? 1) > 1;
 const machineChip = (s) => (multi() ? `<span class="machine${s.stale ? " off" : ""}">${esc(s.machine)}${s.stale ? "・オフライン" : ""}</span>` : "");
 
@@ -49,6 +52,7 @@ async function load() {
   checkTransitions(list);
   state.list = list;
   renderSummary(list);
+  renderSide(list, r.name === "detail" ? r.id : null);
   if (r.name === "detail") {
     const res = await fetch(`/api/sessions/${encodeURIComponent(r.id)}`);
     state.detail = res.ok ? await res.json() : null;
@@ -68,7 +72,24 @@ function renderSummary(list) {
     : "";
   summaryEl.innerHTML = `<span>返事待ち <b>${c.waiting}</b></span><span>作業中 <b>${c.working}</b></span>${c.stalled ? `<span>止まっている <b>${c.stalled}</b></span>` : ""}${machines}`;
   document.title = c.waiting ? `(${c.waiting}) cc-dash` : "cc-dash";
+  setTopHeight(); // 端末ラベルの増減でヘッダーの高さが変わることがある
 }
+
+// ---- サイドメニュー：タイトルと札だけの一覧。押すと詳細に飛ぶ ----
+function renderSide(list, currentKey) {
+  sideEl.innerHTML = list.sessions
+    .map((s) => {
+      const cls = ["nav-item", s.key === currentKey ? "current" : "", s.stale || ["idle", "closed"].includes(s.status) ? "dim" : ""].filter(Boolean).join(" ");
+      return `<a class="${cls}" href="#/s/${encodeURIComponent(s.key)}" title="${esc(s.title)}"><span class="nav-title">${esc(s.title)}</span><span class="badge st-${s.status}">${statusLabel(s)}</span></a>`;
+    })
+    .join("");
+}
+
+// サイドメニューをヘッダーのすぐ下に留めるため、ヘッダーの高さを CSS に渡す
+function setTopHeight() {
+  document.documentElement.style.setProperty("--top-h", `${topEl.offsetHeight}px`);
+}
+window.addEventListener("resize", setTopHeight);
 
 function renderList(list) {
   const active = list.sessions.filter((s) => !["idle", "closed"].includes(s.status));
@@ -88,7 +109,7 @@ function card(s, list, dim = false) {
   const showNow = s.status === "working" || s.status === "stalled" || n.todoTotal > 0;
   const waitMs = list.now - s.since;
   const late = s.status === "waiting" && waitMs > list.waitWarnMs;
-  const label = STATUS[s.status] + (s.reason && REASON[s.reason] ? `・${REASON[s.reason]}` : "");
+  const label = statusLabel(s);
   const hlCount = Object.values(s.counts).reduce((a, b) => a + b, 0);
   const timeText =
     s.status === "waiting" ? `${ago(waitMs)}待ち` : s.status === "working" ? `${ago(waitMs)}経過` : s.status === "stalled" ? `${ago(waitMs)}動きなし` : hm(s.lastActivity);
@@ -139,7 +160,7 @@ function renderDetail(d, focus, list) {
   }
   const keepScroll = window.scrollY;
   const c = d.counts;
-  const label = STATUS[d.status] + (d.reason && REASON[d.reason] ? `・${REASON[d.reason]}` : "");
+  const label = statusLabel(d);
   const chapters = d.chapters
     .map((ch) => {
       const items = ch.items.map((it) => item(it)).join("");
