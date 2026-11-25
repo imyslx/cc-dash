@@ -178,6 +178,41 @@ test("VSCode で開く：この端末のセッションだけ、Claude Code 拡�
   }
 });
 
+test("ピン留め：いくつでも留められ、ファイルに残り、一覧に留めた時刻が付く", async () => {
+  const { createApp } = await import("../src/server.mjs");
+  const { Pins } = await import("../src/pins.mjs");
+  const store = new Store();
+  await store.poll();
+  const file = join(dir, "pins-test.json");
+  const srv = createApp(store, { name: "demo", pins: new Pins(file) });
+  const port = await new Promise((r) => srv.listen(0, "127.0.0.1", () => r(srv.address().port)));
+  const base = `http://127.0.0.1:${port}`;
+  const pin = (key, method = "POST", headers = { "x-cc-dash": "pin" }) => fetch(`${base}/api/pins/${encodeURIComponent(key)}`, { method, headers });
+  const list = async () => (await (await fetch(`${base}/api/sessions`)).json()).sessions;
+  try {
+    const [a, b] = (await list()).map((s) => s.key);
+    assert.equal((await pin(a)).status, 200);
+    assert.equal((await pin(b)).status, 200);
+    const pinned = (await list()).filter((s) => s.pinned);
+    assert.deepEqual(pinned.map((s) => s.key).sort(), [a, b].sort());
+    assert.ok(pinned.every((s) => typeof s.pinnedAt === "number"));
+
+    // ファイルに残るので、作り直しても同じ
+    assert.deepEqual(Object.keys(new Pins(file).map).sort(), [a, b].sort());
+
+    // 外す
+    assert.equal((await pin(a, "DELETE")).status, 200);
+    assert.deepEqual((await list()).filter((s) => s.pinned).map((s) => s.key), [b]);
+
+    // 別のサイトのページから勝手に変えられないよう、専用ヘッダーが要る。知らないセッションは留めない
+    assert.equal((await pin(a, "POST", {})).status, 405);
+    assert.equal((await pin("no-such-session")).status, 404);
+  } finally {
+    srv.close();
+    srv.closeAllConnections?.();
+  }
+});
+
 test("Haiku の出力を JSON 配列として読む", () => {
   assert.deepEqual(parseHighlights('結果:\n[{"kind":"skip","text":"E2E未実行"},{"kind":"bogus","text":"x"}]'), [{ kind: "skip", text: "E2E未実行", by: "llm" }]);
   assert.deepEqual(parseHighlights("[]"), []);

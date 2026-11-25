@@ -10,6 +10,7 @@ export const config = {
   dataDir: DATA_DIR,
   eventsFile: join(DATA_DIR, "events.jsonl"),
   llmCacheFile: join(DATA_DIR, "llm-cache.json"),
+  pinsFile: join(DATA_DIR, "pins.json"), // ピン留め（src/pins.mjs）
   llmWorkdir: join(DATA_DIR, "llm-workdir"),
   peersFile: env.CC_DASH_PEERS_FILE || join(DATA_DIR, "peers.json"), // ハブとして集約する相手（ADR-0005）
   host: env.CC_DASH_HOST || "127.0.0.1", // 既定はローカル専用。エージェントは Tailscale の IP を指定する

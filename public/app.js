@@ -47,6 +47,23 @@ async function openSession(btn) {
 const statusLabel = (s) => STATUS[s.status] + (s.reason && REASON[s.reason] ? `・${REASON[s.reason]}` : "");
 // ヘッダーの件数を押したときの絞り込み。件数と合わせるため、オフライン端末の分は外す
 const visible = (list) => (state.filter ? list.sessions.filter((s) => s.status === state.filter && !s.stale) : list.sessions);
+const isRest = (s) => ["idle", "closed"].includes(s.status);
+// ピン留めしたものを、留めた順に並べる。新しく留めたものは後ろに足すので、すでに留めたものの位置は動かない
+const pinnedOf = (sessions) => sessions.filter((s) => s.pinned).sort((a, b) => a.pinnedAt - b.pinnedAt);
+
+const PIN_SVG = `<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M10.2 1.3l4.5 4.5-1 1-1-.2-2.4 2.4.3 2.6-1 1-2.6-2.6-3.6 3.6H2.7v-.7l3.6-3.6-2.6-2.6 1-1 2.6.3 2.4-2.4-.2-1z"/></svg>`;
+function pinButton(s) {
+  const label = s.pinned ? "ピン留めを外す" : "ピン留め";
+  return `<button class="pin${s.pinned ? " on" : ""}" data-pin="${esc(s.key)}" data-stop title="${label}" aria-label="${label}" aria-pressed="${!!s.pinned}">${PIN_SVG}</button>`;
+}
+
+async function togglePin(btn) {
+  const on = !btn.classList.contains("on");
+  btn.classList.toggle("on", on); // 返事を待たずに見た目を切り替える
+  const r = await fetch(`/api/pins/${encodeURIComponent(btn.dataset.pin)}`, { method: on ? "POST" : "DELETE", headers: { "x-cc-dash": "pin" } }).catch(() => null);
+  if (!r?.ok) btn.classList.toggle("on", !on); // 失敗したら戻す
+  load().catch(console.error);
+}
 const multi = () => (state.list?.machines?.length ?? 1) > 1;
 const machineChip = (s) => (multi() ? `<span class="machine${s.stale ? " off" : ""}">${esc(s.machine)}${s.stale ? "・オフライン" : ""}</span>` : "");
 
@@ -88,12 +105,15 @@ function renderSummary(list) {
 
 // ---- サイドメニュー：タイトルと札だけの一覧。押すと詳細に飛ぶ ----
 function renderSide(list, currentKey) {
-  sideEl.innerHTML = visible(list)
-    .map((s) => {
-      const cls = ["nav-item", s.key === currentKey ? "current" : "", s.stale || ["idle", "closed"].includes(s.status) ? "dim" : ""].filter(Boolean).join(" ");
-      return `<a class="${cls}" href="#/s/${encodeURIComponent(s.key)}" title="${esc(s.title)}"><span class="nav-title">${esc(s.title)}</span><span class="badge st-${s.status}">${statusLabel(s)}</span></a>`;
-    })
-    .join("");
+  const shown = visible(list);
+  const pinned = pinnedOf(shown);
+  const others = shown.filter((s) => !s.pinned);
+  const row = (s) => {
+    const cls = ["nav-item", s.key === currentKey ? "current" : "", s.stale || isRest(s) ? "dim" : ""].filter(Boolean).join(" ");
+    return `<a class="${cls}" href="#/s/${encodeURIComponent(s.key)}" title="${esc(s.title)}"><span class="nav-title">${esc(s.title)}</span><span class="badge st-${s.status}">${statusLabel(s)}</span></a>`;
+  };
+  // ピン留めしたものを先頭にまとめ、ほかとの間に線を引く
+  sideEl.innerHTML = pinned.map(row).join("") + (pinned.length && others.length ? `<hr class="nav-sep">` : "") + others.map(row).join("");
 }
 
 // サイドメニューをヘッダーのすぐ下に留めるため、ヘッダーの高さを CSS に渡す
@@ -104,8 +124,10 @@ window.addEventListener("resize", setTopHeight);
 
 function renderList(list) {
   const shown = visible(list);
-  const active = shown.filter((s) => !["idle", "closed"].includes(s.status));
-  const rest = shown.filter((s) => ["idle", "closed"].includes(s.status));
+  const pinned = pinnedOf(shown);
+  const others = shown.filter((s) => !s.pinned);
+  const active = others.filter((s) => !isRest(s));
+  const rest = others.filter(isRest);
   if (!list.sessions.length) {
     app.innerHTML = `<p class="empty">最近の Claude Code のセッションが見つかりません。<br>Claude Code を使うと、ここに出てきます。</p>`;
     return;
@@ -115,7 +137,10 @@ function renderList(list) {
     return;
   }
   app.innerHTML =
-    `<div class="grid">${active.map((s) => card(s, list)).join("")}</div>` +
+    (pinned.length ? `<p class="section-title">ピン留め（${pinned.length}）</p><div class="grid">${pinned.map((s) => card(s, list, isRest(s))).join("")}</div>` : "") +
+    (active.length
+      ? `${pinned.length ? `<p class="section-title">そのほか（${active.length}）</p>` : ""}<div class="grid">${active.map((s) => card(s, list)).join("")}</div>`
+      : "") +
     (rest.length ? `<p class="section-title">区切り・終了（${rest.length}）</p><div class="grid">${rest.map((s) => card(s, list, true)).join("")}</div>` : "");
 }
 
@@ -136,7 +161,7 @@ function card(s, list, dim = false) {
         <p class="title">${esc(s.title)}${s.titleSuffix ? `<span class="suffix">${esc(s.titleSuffix)}</span>` : ""}</p>
         <p class="meta">${machineChip(s)}${esc(short(s.cwd) || s.project)}${s.branch ? ` ・ ${esc(s.branch)}` : ""}</p>
       </div>
-      <span class="badge st-${s.status}">${label}</span>
+      <div class="head-end">${pinButton(s)}<span class="badge st-${s.status}">${label}</span></div>
     </div>
     ${s.summary ? `<p class="line">${esc(s.summary)}</p>` : ""}
     ${s.progress ? `<p class="progress">${esc(s.progress)}</p>` : ""}
@@ -203,7 +228,7 @@ function renderDetail(d, focus, list) {
         <p class="meta">${machineChip(d)}${esc(short(d.cwd) || d.project)}${d.branch ? ` ・ ${esc(d.branch)}` : ""}</p>
         ${d.summary ? `<p class="line">${esc(d.summary)}</p>` : ""}
       </div>
-      <span class="badge st-${d.status}">${label}</span>
+      <div class="head-end">${pinButton(d)}<span class="badge st-${d.status}">${label}</span></div>
     </div>
     <div class="stats">
       <div class="stat"><p>仮定・判断</p><b style="color:var(--warn)">${c.assumption}</b></div>
@@ -278,6 +303,8 @@ summaryEl.addEventListener("click", (e) => {
 app.addEventListener("click", (e) => {
   const op = e.target.closest("[data-open]");
   if (op) return openSession(op);
+  const pb = e.target.closest("[data-pin]");
+  if (pb) return togglePin(pb);
   if (e.target.closest("[data-stop]")) return;
   const exp = e.target.closest("[data-expand]");
   if (exp) return exp.classList.toggle("clamp");

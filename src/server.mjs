@@ -4,6 +4,7 @@
 //   GET /api/sessions/:key  詳細（別端末のものは中継する）
 //   GET /api/stream         変更通知（Server-Sent Events）
 //   POST /api/sessions/:key/open  そのセッションを VSCode で開く（この端末のセッションだけ。src/open.mjs）
+//   POST / DELETE /api/pins/:key  ピン留めする／外す（src/pins.mjs）
 // ループバック以外からのアクセスにはトークンが要る（src/auth.mjs）。
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
@@ -13,11 +14,12 @@ import { config } from "./config.mjs";
 import { authorized, tokenFrom, COOKIE } from "./auth.mjs";
 import { mergeLists, splitKey } from "./merge.mjs";
 import { openUri, sessionUri } from "./open.mjs";
+import { Pins } from "./pins.mjs";
 
 const PUBLIC = join(dirname(fileURLToPath(import.meta.url)), "..", "public");
 const TYPES = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".svg": "image/svg+xml" };
 
-export function createApp(store, { peers = null, name = config.name, token = config.token, open = openUri } = {}) {
+export function createApp(store, { peers = null, name = config.name, token = config.token, open = openUri, pins = new Pins(config.pinsFile) } = {}) {
   const clients = new Set();
   let version = 0;
   const notify = () => {
@@ -35,18 +37,26 @@ export function createApp(store, { peers = null, name = config.name, token = con
     res.end(JSON.stringify(body));
   };
 
-  const list = () => mergeLists(store.listView(), name, peers?.peers ?? []);
+  const withPin = (s) => {
+    const at = pins.at(s.key);
+    return { ...s, pinned: at !== null, pinnedAt: at };
+  };
+
+  const list = () => {
+    const l = mergeLists(store.listView(), name, peers?.peers ?? []);
+    return { ...l, sessions: l.sessions.map(withPin) };
+  };
 
   async function detail(key) {
     const { peer, id } = splitKey(key);
     if (!peer) {
       const d = store.detailView(id);
-      return d && { ...d, key: id, machine: name, self: true, stale: false, ssh: null };
+      return d && withPin({ ...d, key: id, machine: name, self: true, stale: false, ssh: null });
     }
     const p = peers?.find(peer);
     if (!p) return null;
     const d = await peers.detail(peer, id).catch(() => null);
-    return d && { ...d, key, machine: peer, self: false, stale: !p.online, ssh: p.ssh };
+    return d && withPin({ ...d, key, machine: peer, self: false, stale: !p.online, ssh: p.ssh });
   }
 
   return createServer(async (req, res) => {
@@ -65,6 +75,16 @@ export function createApp(store, { peers = null, name = config.name, token = con
     }
 
     try {
+      const mPin = p.match(/^\/api\/pins\/([^/]+)$/);
+      if (mPin) {
+        // 開くときと同じく、別のサイトのページから勝手に変えられないよう専用ヘッダーを必須にする
+        if (!["POST", "DELETE"].includes(req.method) || req.headers["x-cc-dash"] !== "pin") return json(res, 405, { error: "method not allowed" });
+        const key = decodeURIComponent(mPin[1]);
+        const on = req.method === "POST";
+        if (on && !list().sessions.some((s) => s.key === key)) return json(res, 404, { error: "not found" }); // 外すのは一覧から消えたあとでもできる
+        if (pins.set(key, on)) notify();
+        return json(res, 200, { ok: true, pinned: on });
+      }
       const mOpen = p.match(/^\/api\/sessions\/([^/]+)\/open$/);
       if (mOpen) {
         // 別のサイトのページから勝手に呼ばれないよう、POST と専用ヘッダーを必須にする
