@@ -47,6 +47,25 @@ test("依頼文：VSCode 拡張が差し込む <ide_…> を取り除き、見�
   assert.deepEqual(s.prompts, ["キャッシュを入れて", "ここを直して"]);
 });
 
+test("見出し：自分で付けた名前 → AI が付けたタイトル → 最初の依頼文の順に使う", () => {
+  const t = "2026-11-25T00:00:00.000Z";
+  const prompt = { type: "user", uuid: "u1", timestamp: t, message: { role: "user", content: "おはようー！ これお願い" } };
+  const ai = { type: "ai-title", sessionId: "s", aiTitle: "cc-dash のセットアップ" };
+  const custom = { type: "custom-title", sessionId: "s", customTitle: "[P] ダッシュボード" };
+
+  const a = new Session("a", "a.jsonl", "p");
+  a.apply([prompt]);
+  assert.equal(a.displayTitle(), "おはようー！ これお願い"); // タイトルの行がなければ依頼文
+
+  const b = new Session("b", "b.jsonl", "p");
+  b.apply([prompt, ai]);
+  assert.equal(b.displayTitle(), "cc-dash のセットアップ"); // 挨拶ではなく AI のタイトル
+
+  const c = new Session("c", "c.jsonl", "p");
+  c.apply([prompt, ai, custom, ai]); // 名前を付けたあとも AI のタイトルは書き直され続ける
+  assert.equal(c.displayTitle(), "[P] ダッシュボード");
+});
+
 test("並び順：同じ札の中ではその札になった時刻で並べ、動きがあっても入れ替えない", () => {
   const card = (id, status, since, lastActivity) => ({ id, status, since, lastActivity, title: id });
   const order = (local, remote) =>

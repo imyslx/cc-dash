@@ -50,7 +50,11 @@ export class Session {
     this.project = project; // ~/.claude/projects 配下のディレクトリ名
     this.cwd = null;
     this.branch = null;
-    this.title = null; // Claude Code が付けたタイトル（summary 行など）
+    // 会話記録のタイトルの行。種類ごとに持ち、displayTitle で優先順に選ぶ
+    //   custom … 自分で付けた名前（custom-title）。付け直すと変わる
+    //   ai     … Claude Code が AI で付けたタイトル（ai-title）。最初の依頼の直後に書かれ、同じ中身で何度も書き直される
+    //   summary … 古い形式の要約行（summary）
+    this.titles = { custom: null, ai: null, summary: null };
     this.chapters = [];
     this.todos = []; // { content, status, activeForm }
     this.taskSeq = 0;
@@ -86,16 +90,17 @@ export class Session {
   applyOne(e) {
     if (!e || typeof e !== "object") return false;
 
-    // タイトル系の行（バージョンによって形が違うので緩く拾う）
-    if (e.type === "summary" && e.summary) {
-      this.title = e.summary;
+    // タイトル系の行（バージョンによって形が違うので緩く拾う）。
+    // 同じ中身の書き直しでは変化なしとする（ai-title は何千回も書き直されるので、そのたびに描き直さない）
+    const setTitle = (kind, v) => {
+      if (typeof v !== "string" || !v || this.titles[kind] === v) return false;
+      this.titles[kind] = v;
       return true;
-    }
+    };
+    if (e.type === "summary" && e.summary) return setTitle("summary", e.summary);
+    if (e.type === "ai-title") return setTitle("ai", e.aiTitle);
     const customTitle = e.customTitle || (e.type?.includes?.("title") ? e.title : null);
-    if (typeof customTitle === "string" && customTitle) {
-      this.title = customTitle;
-      return true;
-    }
+    if (customTitle) return setTitle("custom", customTitle);
 
     if (e.isSidechain) return false; // サブエージェント内部のやりとりは時系列に混ぜない
     if (e.type !== "user" && e.type !== "assistant") return false;
@@ -215,8 +220,10 @@ export class Session {
     };
   }
 
+  // 自分で付けた名前 → AI が付けたタイトル → 古い形式の要約 → 最初の依頼文
   displayTitle() {
-    if (this.title) return this.title;
+    const t = this.titles.custom || this.titles.ai || this.titles.summary;
+    if (t) return t;
     const first = this.prompts[0];
     return first ? clip(first.replace(/\s+/g, " "), 40) : "（無題のセッション）";
   }
