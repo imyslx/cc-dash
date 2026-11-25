@@ -105,8 +105,8 @@ for _ in $(seq 1 20); do
   [ "$CODE" = "200" ] && break
   sleep 0.5
 done
-[ "$CODE" = "200" ] || fail "http://$IP:$PORT が応答しません（HTTP $CODE）。$DATA/agent.err.log を確認してください"
-echo "✔ 応答あり: http://$IP:$PORT （端末名: $NAME）"
+[ "$CODE" = "200" ] || fail "http://$IP:$PORT が応答しません（HTTP ${CODE}）。$DATA/agent.err.log を確認してください"
+echo "✔ 応答あり: http://$IP:$PORT （端末名: ${NAME}）"
 
 [ -f "$TOKEN_FILE" ] && rm -f "$TOKEN_FILE" && echo "✔ $TOKEN_FILE を消しました（トークンは plist に入っています）"
 echo
