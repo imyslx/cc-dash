@@ -20,6 +20,7 @@ export const config = {
   pollMs: 1500,
   stallMs: 3 * 60 * 1000, // Claude の番なのに3分動きがない → 止まっている
   idleMs: 6 * 60 * 60 * 1000, // 6時間触っていない → 区切り
+  agentWaitMs: 60 * 60 * 1000, // サブエージェントの報告を待つ上限（実測：起動→報告は268件で最大28分・2026-11-25）
   waitWarnMs: 30 * 60 * 1000, // 返事待ちが30分を超えたら時刻を赤く
   gitCheckMs: 20 * 1000,
   peerRefreshMs: 30 * 1000,

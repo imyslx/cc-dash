@@ -7,6 +7,14 @@ const TODO_TOOLS = new Set(["TodoWrite", "TaskCreate", "TaskUpdate"]);
 // 「今ここ」の直近ツールに出しても意味がないもの
 const META_TOOLS = new Set([...TODO_TOOLS, "Skill", "TaskList", "TaskGet"]);
 
+// 裏で動かしたサブエージェント（Agent ツール）の起動と報告。報告を待つ間は、親の Claude の番が続いている（status.mjs）
+//   起動：Agent ツールの結果が「Async agent launched … agentId: <ID>」
+//   報告：isMeta の「Another Claude session sent a message: <agent-message from="<ID>">」、または <task-notification> の <task-id>
+const AGENT_LAUNCHED = /^\s*Async agent launched[\s\S]*?agentId: ([a-z0-9]+)/;
+const AGENT_REPORTED = /^\s*Another Claude session sent a message:\s*<agent-message from="([a-z0-9]+)">/;
+const TASK_DONE = /<task-notification>[\s\S]*?<task-id>([^<]+)<\/task-id>/;
+const resultText = (b) => (typeof b.content === "string" ? b.content : Array.isArray(b.content) ? b.content.map((x) => x.text || "").join(" ") : "");
+
 // / と \ のどちらの区切りでも末尾を取る（Windows の会話記録を別 OS で読む場合にも備えて）
 const basename = (p) => String(p).split(/[\\/]/).pop();
 const ts = (e) => (e.timestamp ? Date.parse(e.timestamp) : NaN);
@@ -61,6 +69,9 @@ export class Session {
     this.skills = [];
     this.files = new Set();
     this.pendingTools = new Map(); // tool_use_id -> brief
+    this.agentCalls = new Set(); // Agent ツールの tool_use_id（その結果だけを起動とみなす）
+    this.knownAgents = new Set(); // これまでに起動したサブエージェントの ID
+    this.bgAgents = new Map(); // 報告を待っているサブエージェントの ID -> 起動（または追加の指示）の時刻
     this.lastTool = null;
     this.lastActivity = 0;
     this.lastPromptTs = 0;
@@ -122,10 +133,18 @@ export class Session {
     for (const b of blocks) {
       if (b.type === "tool_result") {
         this.pendingTools.delete(b.tool_use_id);
+        const launched = this.agentCalls.has(b.tool_use_id) && resultText(b).match(AGENT_LAUNCHED);
+        if (launched) {
+          this.knownAgents.add(launched[1]);
+          this.bgAgents.set(launched[1], t);
+        }
         changed = true;
         continue;
       }
-      if (b.type !== "text" || e.isMeta) continue;
+      if (b.type !== "text") continue;
+      const done = (b.text || "").match(AGENT_REPORTED) || (b.text || "").match(TASK_DONE);
+      if (done && this.bgAgents.delete(done[1])) changed = true;
+      if (e.isMeta) continue; // サブエージェントの報告もここで外れるので、依頼（章）には数えない
       if (/^\[Request interrupted/.test(b.text || "")) {
         this.interrupted = true;
         this.currentChapter(t).items.push({ type: "note", uuid: e.uuid, ts: t, text: "中断しました" });
@@ -162,10 +181,19 @@ export class Session {
         this.pendingTools.set(b.id, brief);
         if (!META_TOOLS.has(b.name)) this.lastTool = { brief, ts: t };
         this.trackTool(b.name, b.input || {});
+        this.trackAgent(b, t);
         ch.items.push({ type: "tool", uuid, ts: t, name: b.name, brief });
       }
     }
     return true;
+  }
+
+  // サブエージェントの報告待ちを追う（起動の結果と報告は applyUser で拾う）
+  trackAgent(b, t) {
+    const input = b.input || {};
+    if (b.name === "Agent") this.agentCalls.add(b.id);
+    else if (b.name === "SendMessage" && this.knownAgents.has(input.to)) this.bgAgents.set(input.to, t); // 追加の指示を送ると、また報告を待つ
+    else if (b.name === "TaskStop") this.bgAgents.delete(input.task_id ?? input.shell_id);
   }
 
   trackTool(name, input) {

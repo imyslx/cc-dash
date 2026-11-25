@@ -17,6 +17,55 @@ const { Store } = await import("../src/store.mjs");
 const { parseHighlights } = await import("../src/llm.mjs");
 const { Session } = await import("../src/session.mjs");
 const { mergeLists } = await import("../src/merge.mjs");
+const { computeStatus } = await import("../src/status.mjs");
+
+test("札：裏で動かしたサブエージェントの報告を待っている間は、返事待ちでなく作業中", () => {
+  const T = Date.parse("2026-11-25T00:00:00.000Z");
+  const iso = (m) => new Date(T + m * 60_000).toISOString();
+  const s = new Session("s1", "f.jsonl", "p");
+  const launch = (m, toolId, agentId) => [
+    { type: "assistant", uuid: `a${m}`, timestamp: iso(m), message: { role: "assistant", content: [{ type: "tool_use", id: toolId, name: "Agent", input: { prompt: "調べて" } }] } },
+    {
+      type: "user",
+      uuid: `r${m}`,
+      timestamp: iso(m),
+      message: { role: "user", content: [{ type: "tool_result", tool_use_id: toolId, content: [{ type: "text", text: `Async agent launched successfully.\nagentId: ${agentId} (internal ID)` }] }] },
+    },
+  ];
+  const handback = (m, agentId) => ({
+    type: "user",
+    isMeta: true,
+    uuid: `h${m}`,
+    timestamp: iso(m),
+    message: { role: "user", content: `Another Claude session sent a message:\n<agent-message from="${agentId}">\n[Subagent hand-back] 報告です\n</agent-message>` },
+  });
+  s.apply([{ type: "user", uuid: "u0", timestamp: iso(0), message: { role: "user", content: "調査お願い" } }, ...launch(1, "t1", "a00000000000000aa")]);
+  const hook = { promptTs: T, stopTs: T + 2 * 60_000 }; // 起動したあと、親のセッションは一区切りついた
+
+  // 報告待ちの間は作業中。親の会話記録が動かなくても「止まっている」にしない
+  const st = computeStatus(s, hook, T + 20 * 60_000);
+  assert.equal(st.status, "working");
+  assert.equal(st.reason, "agents");
+
+  // 報告が届いたら待ちが消え、一区切りのあとは返事待ちに戻る。報告は依頼（章）に数えない
+  s.apply([handback(15, "a00000000000000aa")]);
+  assert.equal(computeStatus(s, { promptTs: T + 15 * 60_000, stopTs: T + 16 * 60_000 }, T + 20 * 60_000).status, "waiting");
+  assert.deepEqual(s.prompts, ["調査お願い"]);
+
+  // 終わったエージェントに追加の指示を送ったら、また報告待ち
+  s.apply([{ type: "assistant", uuid: "sm", timestamp: iso(21), message: { role: "assistant", content: [{ type: "tool_use", id: "t2", name: "SendMessage", input: { to: "a00000000000000aa", message: "続けて" } }] } }]);
+  assert.equal(computeStatus(s, { promptTs: T + 15 * 60_000, stopTs: T + 22 * 60_000 }, T + 25 * 60_000).reason, "agents");
+
+  // 止めたら待たない
+  s.apply([{ type: "assistant", uuid: "ts", timestamp: iso(26), message: { role: "assistant", content: [{ type: "tool_use", id: "t3", name: "TaskStop", input: { task_id: "a00000000000000aa" } }] } }]);
+  assert.equal(computeStatus(s, { promptTs: T + 15 * 60_000, stopTs: T + 27 * 60_000 }, T + 30 * 60_000).status, "waiting");
+
+  // 報告が来ないまま上限（60分）を過ぎたら、返事待ちに戻す
+  s.apply(launch(40, "t4", "a00000000000000bb"));
+  const later = { promptTs: T + 15 * 60_000, stopTs: T + 41 * 60_000 };
+  assert.equal(computeStatus(s, later, T + 50 * 60_000).status, "working");
+  assert.equal(computeStatus(s, later, T + 101 * 60_000).status, "waiting");
+});
 
 test("依頼文：VSCode 拡張が差し込む <ide_…> を取り除き、見出しや依頼の件数に混ぜない", () => {
   const s = new Session("s1", "f.jsonl", "p");

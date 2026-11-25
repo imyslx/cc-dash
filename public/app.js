@@ -12,7 +12,7 @@ const STATUS = {
   idle: "区切り",
   closed: "終了",
 };
-const REASON = { permission: "許可待ち", interrupted: "中断" };
+const REASON = { permission: "許可待ち", interrupted: "中断", agents: "サブエージェント" };
 const KIND = { question: "確認", skip: "スキップ", risk: "懸念", assumption: "仮定", discovery: "発見" };
 
 let state = { list: null, detail: null, onlyImp: false, filter: null, prevStatus: new Map(), notify: false, audio: null };
@@ -214,8 +214,10 @@ function renderDetail(d, focus, list) {
   const nowLine =
     d.status === "waiting"
       ? `あなたの返事待ち（${ago(list.now - d.since)}）`
-      : d.status === "working"
-        ? `作業中${d.now.current ? `：${d.now.current}` : d.now.lastTool ? `：${d.now.lastTool}` : ""}`
+      : d.status === "working" && d.reason === "agents"
+        ? `サブエージェントの報告待ち（${ago(list.now - d.since)}経過）`
+        : d.status === "working"
+          ? `作業中${d.now.current ? `：${d.now.current}` : d.now.lastTool ? `：${d.now.lastTool}` : ""}`
         : d.status === "stalled"
           ? `止まっている（${ago(list.now - d.since)}動きなし）`
           : STATUS[d.status];

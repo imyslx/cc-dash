@@ -1,6 +1,6 @@
 // 状態の札は「経過時間」ではなく「誰の番か」で決める（ADR-0002）。
 //   waiting  … 返事待ち（あなたの番）。reason: reply / permission / interrupted
-//   working  … 作業中（Claude の番で、動いている）
+//   working  … 作業中（Claude の番で、動いている）。reason: agents（裏で動かしたサブエージェントの報告待ち）
 //   stalled  … 止まっている（Claude の番なのに一定時間動きがない）
 //   idle     … 区切り（長時間触っていない）
 //   closed   … 終了（SessionEnd を受け取った）
@@ -58,20 +58,29 @@ export function computeStatus(session, hook, now = Date.now()) {
 
   if (session.interrupted) return withIdle({ status: "waiting", reason: "interrupted", since: lastAct }, now);
 
-  // Stop が今回の依頼より後に来ていれば、Claude の番は終わっている
-  if (h.stopTs && h.stopTs >= turnStart) return withIdle({ status: "waiting", reason: "reply", since: h.stopTs }, now);
+  // Stop が今回の依頼より後に来ていれば、Claude の番は終わっている。
+  // ただし裏で動かしたサブエージェントの報告を待っているなら、報告が届くと Claude が続きを始めるので作業中とする。
+  // その間は親の会話記録が動かないので、「止まっている」の判定はしない
+  if (h.stopTs && h.stopTs >= turnStart) return withIdle(endOfTurn(session, h.stopTs, now), now);
 
   const hasHook = h.promptTs || h.stopTs || h.startedTs;
   if (!hasHook) {
     // フック未導入のセッション：会話記録だけで推定
     const claudeTurn = session.pendingTools.size > 0 || session.lastRole === "user";
-    if (!claudeTurn) return withIdle({ status: "waiting", reason: "reply", since: lastAct }, now);
+    if (!claudeTurn) return withIdle(endOfTurn(session, lastAct, now), now);
   }
 
   if (turnStart === 0 && lastAct === 0) return { status: "idle", since: 0 };
   if (now - lastAct > config.idleMs) return { status: "idle", since: lastAct };
   if (now - lastAct > config.stallMs) return { status: "stalled", since: lastAct };
   return { status: "working", since: turnStart || lastAct };
+}
+
+// Claude の番が一区切りついたときの札。報告を待っているサブエージェントがいれば作業中、いなければ返事待ち。
+// 報告が来ないまま終わるサブエージェントもあるので、起動から上限（config.agentWaitMs）を過ぎたものは待たない
+function endOfTurn(session, since, now) {
+  const agents = [...(session.bgAgents?.values() ?? [])].some((ts) => now - ts < config.agentWaitMs);
+  return agents ? { status: "working", reason: "agents", since } : { status: "waiting", reason: "reply", since };
 }
 
 function withIdle(st, now) {
