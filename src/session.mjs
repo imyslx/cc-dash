@@ -22,7 +22,9 @@ function cleanPrompt(raw) {
     const args = t.match(/<command-args>([\s\S]*?)<\/command-args>/)?.[1]?.trim();
     return { text: args ? `${cmd[1]} ${args}` : cmd[1], isCommand: true };
   }
-  t = t.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, "").trim();
+  t = t.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, "");
+  // VSCode 拡張が差し込む、開いているファイルや選んだ範囲の情報（<ide_opened_file> / <ide_selection> など）
+  t = t.replace(/<(ide_[a-z_]+)>[\s\S]*?<\/\1>/g, "").trim();
   if (!t) return null;
   return { text: t, isCommand: false };
 }

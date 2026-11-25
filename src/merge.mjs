@@ -1,6 +1,6 @@
 // 自分のセッションと、エージェントから取ってきたセッションを1つの一覧にまとめる。
 // 別の端末のセッションには key = "<端末名>::<セッションID>" を振る。
-import { STATUS_ORDER } from "./status.mjs";
+import { compareCards } from "./status.mjs";
 
 export const SEP = "::";
 
@@ -33,12 +33,7 @@ export function mergeLists(local, selfName, peers = []) {
   for (const s of sessions) count[s.title] = (count[s.title] || 0) + 1;
   for (const s of sessions) if (count[s.title] > 1 && !s.titleSuffix) s.titleSuffix = s.branch || s.machine;
 
-  sessions.sort(
-    (a, b) =>
-      Number(a.stale) - Number(b.stale) ||
-      STATUS_ORDER[a.status] - STATUS_ORDER[b.status] ||
-      b.lastActivity - a.lastActivity,
-  );
+  sessions.sort((a, b) => Number(a.stale) - Number(b.stale) || compareCards(a, b));
 
   return {
     ...local,

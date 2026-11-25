@@ -8,6 +8,17 @@ import { config } from "./config.mjs";
 
 export const STATUS_ORDER = { waiting: 0, stalled: 1, working: 2, idle: 3, closed: 4 };
 
+// カードの並び順：札の順 → その札になった時刻（since）の新しい順。
+// 最後に動いた時刻で並べると、作業中のセッションが動くたびに入れ替わって気が散るので使わない。
+// since が同じときも順番が揺れないよう、最後はキーで決める。
+export function compareCards(a, b) {
+  return (
+    STATUS_ORDER[a.status] - STATUS_ORDER[b.status] ||
+    (b.since || 0) - (a.since || 0) ||
+    String(a.key ?? a.id).localeCompare(String(b.key ?? b.id))
+  );
+}
+
 // フックのイベント列をセッションごとの最新状態に畳み込む
 export function foldEvent(state, ev) {
   const s = (state[ev.session_id] ??= {});

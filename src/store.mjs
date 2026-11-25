@@ -7,7 +7,7 @@ import { join, basename } from "node:path";
 import { config } from "./config.mjs";
 import { JsonlTail } from "./jsonl.mjs";
 import { Session } from "./session.mjs";
-import { foldEvent, computeStatus, STATUS_ORDER } from "./status.mjs";
+import { foldEvent, computeStatus, compareCards } from "./status.mjs";
 import { KINDS } from "./highlights.mjs";
 import { LlmWorker } from "./llm.mjs";
 
@@ -169,7 +169,7 @@ export class Store extends EventEmitter {
     const count = {};
     for (const c of list) count[c.title] = (count[c.title] || 0) + 1;
     for (const c of list) if (count[c.title] > 1) c.titleSuffix = c.branch || c.now.current || c.now.lastTool || c.id.slice(0, 8);
-    list.sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status] || b.lastActivity - a.lastActivity);
+    list.sort(compareCards);
     return { version: this.version, now, llm: !!this.llm, waitWarnMs: config.waitWarnMs, sessions: list };
   }
 

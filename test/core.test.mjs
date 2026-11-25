@@ -15,6 +15,50 @@ const { extractByRules } = await import("../src/highlights.mjs");
 const { JsonlTail } = await import("../src/jsonl.mjs");
 const { Store } = await import("../src/store.mjs");
 const { parseHighlights } = await import("../src/llm.mjs");
+const { Session } = await import("../src/session.mjs");
+const { mergeLists } = await import("../src/merge.mjs");
+
+test("依頼文：VSCode 拡張が差し込む <ide_…> を取り除き、見出しや依頼の件数に混ぜない", () => {
+  const s = new Session("s1", "f.jsonl", "p");
+  const t = "2026-11-25T00:00:00.000Z";
+  s.apply([
+    // 別のかたまりとして先頭に入る形
+    {
+      type: "user",
+      uuid: "u1",
+      timestamp: t,
+      message: {
+        role: "user",
+        content: [
+          { type: "text", text: "<ide_opened_file>The user opened the file a.ts in the IDE. This may or may not be related to the current task.</ide_opened_file>" },
+          { type: "text", text: "キャッシュを入れて" },
+        ],
+      },
+    },
+    // 同じかたまりの中に入る形（選んだ範囲の中身は表に出さない）
+    {
+      type: "user",
+      uuid: "u2",
+      timestamp: t,
+      message: { role: "user", content: "<ide_selection>The user selected the lines 1 to 2 from a.ts:\nSECRET=x\n</ide_selection>\nここを直して" },
+    },
+  ]);
+  assert.equal(s.displayTitle(), "キャッシュを入れて");
+  assert.deepEqual(s.prompts, ["キャッシュを入れて", "ここを直して"]);
+});
+
+test("並び順：同じ札の中ではその札になった時刻で並べ、動きがあっても入れ替えない", () => {
+  const card = (id, status, since, lastActivity) => ({ id, status, since, lastActivity, title: id });
+  const order = (local, remote) =>
+    mergeLists({ sessions: local }, "Win", [{ name: "Mac", online: true, skew: 0, data: { sessions: remote } }]).sessions.map((s) => s.key);
+
+  const before = order([card("w1", "working", 1000, 5000)], [card("m1", "working", 2000, 6000)]);
+  assert.deepEqual(before, ["Mac::m1", "w1"]); // 新しく作業を始めたほうが上
+  // Win 側で動きがあって最後に動いた時刻が逆転しても、順番は変わらない
+  assert.deepEqual(order([card("w1", "working", 1000, 9000)], [card("m1", "working", 2000, 6000)]), before);
+  // 札が変わったときは動く（返事待ちが先頭）
+  assert.deepEqual(order([card("w1", "waiting", 9000, 9000)], [card("m1", "working", 2000, 6000)]), ["w1", "Mac::m1"]);
+});
 
 test("ルール抽出：種類を拾い、ただの進捗は拾わない", () => {
   const hs = extractByRules("既存の処理を確認します。TTL は仕様に記載がないので、暫定で5分にしておきました。E2E テストはスキップしています。在庫0件のときもキャッシュしますか？");
