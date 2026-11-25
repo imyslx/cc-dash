@@ -1,0 +1,20 @@
+{
+  "name": "cc-dash",
+  "version": "0.1.0",
+  "description": "Claude Code の並列セッションを時系列で見渡し、途中メッセージから大事なことを拾うローカルダッシュボード",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node src/main.mjs",
+    "start:llm": "node src/main.mjs --llm",
+    "hooks:install": "node scripts/install-hooks.mjs",
+    "hooks:uninstall": "node scripts/install-hooks.mjs --uninstall",
+    "demo": "node scripts/demo.mjs",
+    "demo:hub": "node scripts/demo.mjs --hub",
+    "test": "node --test \"test/*.test.mjs\""
+  },
+  "license": "MIT"
+}

@@ -1,0 +1,9 @@
+node_modules/
+.DS_Store
+# npm run demo / demo:hub で生成されるもの
+test/fixtures/projects/
+test/fixtures/data/
+test/fixtures/mac/
+test/fixtures/win/
+# Mac のエージェント設定（scripts/setup-mac-agent.sh）で使うトークン
+mac-agent.token
