@@ -15,7 +15,7 @@ const STATUS = {
 const REASON = { permission: "許可待ち", interrupted: "中断" };
 const KIND = { question: "確認", skip: "スキップ", risk: "懸念", assumption: "仮定", discovery: "発見" };
 
-let state = { list: null, detail: null, onlyImp: false, prevStatus: new Map(), notify: false, audio: null };
+let state = { list: null, detail: null, onlyImp: false, filter: null, prevStatus: new Map(), notify: false, audio: null };
 
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 const hm = (t) => (t ? new Date(t).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" }) : "");
@@ -38,6 +38,8 @@ function vscodeHref(s) {
   return null;
 }
 const statusLabel = (s) => STATUS[s.status] + (s.reason && REASON[s.reason] ? `・${REASON[s.reason]}` : "");
+// ヘッダーの件数を押したときの絞り込み。件数と合わせるため、オフライン端末の分は外す
+const visible = (list) => (state.filter ? list.sessions.filter((s) => s.status === state.filter && !s.stale) : list.sessions);
 const multi = () => (state.list?.machines?.length ?? 1) > 1;
 const machineChip = (s) => (multi() ? `<span class="machine${s.stale ? " off" : ""}">${esc(s.machine)}${s.stale ? "・オフライン" : ""}</span>` : "");
 
@@ -70,14 +72,16 @@ function renderSummary(list) {
   const machines = (list.machines || []).length > 1
     ? `<span class="machines">${list.machines.map((m) => `<span class="mchip${m.online ? "" : " off"}" title="${esc(m.error || "")}">${esc(m.name)}${m.online ? "" : `・オフライン${m.lastOk ? `（${hm(m.lastOk)}）` : ""}`}</span>`).join("")}</span>`
     : "";
-  summaryEl.innerHTML = `<span>返事待ち <b>${c.waiting}</b></span><span>作業中 <b>${c.working}</b></span>${c.stalled ? `<span>止まっている <b>${c.stalled}</b></span>` : ""}${machines}`;
+  const chip = (st) => `<button class="fchip${state.filter === st ? " on" : ""}" data-filter="${st}" title="押すと${STATUS[st]}だけに絞り込み、もう一度押すと解除">${STATUS[st]} <b>${c[st]}</b></button>`;
+  const showStalled = c.stalled || state.filter === "stalled"; // 絞り込み中は 0 件でも解除できるように出しておく
+  summaryEl.innerHTML = `${chip("waiting")}${chip("working")}${showStalled ? chip("stalled") : ""}${machines}`;
   document.title = c.waiting ? `(${c.waiting}) cc-dash` : "cc-dash";
   setTopHeight(); // 端末ラベルの増減でヘッダーの高さが変わることがある
 }
 
 // ---- サイドメニュー：タイトルと札だけの一覧。押すと詳細に飛ぶ ----
 function renderSide(list, currentKey) {
-  sideEl.innerHTML = list.sessions
+  sideEl.innerHTML = visible(list)
     .map((s) => {
       const cls = ["nav-item", s.key === currentKey ? "current" : "", s.stale || ["idle", "closed"].includes(s.status) ? "dim" : ""].filter(Boolean).join(" ");
       return `<a class="${cls}" href="#/s/${encodeURIComponent(s.key)}" title="${esc(s.title)}"><span class="nav-title">${esc(s.title)}</span><span class="badge st-${s.status}">${statusLabel(s)}</span></a>`;
@@ -92,10 +96,15 @@ function setTopHeight() {
 window.addEventListener("resize", setTopHeight);
 
 function renderList(list) {
-  const active = list.sessions.filter((s) => !["idle", "closed"].includes(s.status));
-  const rest = list.sessions.filter((s) => ["idle", "closed"].includes(s.status));
+  const shown = visible(list);
+  const active = shown.filter((s) => !["idle", "closed"].includes(s.status));
+  const rest = shown.filter((s) => ["idle", "closed"].includes(s.status));
   if (!list.sessions.length) {
     app.innerHTML = `<p class="empty">最近の Claude Code のセッションが見つかりません。<br>Claude Code を使うと、ここに出てきます。</p>`;
+    return;
+  }
+  if (!shown.length) {
+    app.innerHTML = `<p class="empty">${STATUS[state.filter]}のセッションはありません。<br>上の「${STATUS[state.filter]}」をもう一度押すと解除できます。</p>`;
     return;
   }
   app.innerHTML =
@@ -249,6 +258,17 @@ function setOnlyImp(v) {
 }
 
 // ---- クリック ----
+// ヘッダーの件数：押すとその札だけに絞り込み、同じものをもう一度押すと解除。取り直さずに描き直す
+summaryEl.addEventListener("click", (e) => {
+  const b = e.target.closest("[data-filter]");
+  if (!b || !state.list) return;
+  state.filter = state.filter === b.dataset.filter ? null : b.dataset.filter;
+  const r = route();
+  renderSummary(state.list);
+  renderSide(state.list, r.name === "detail" ? r.id : null);
+  if (r.name === "list") renderList(state.list);
+});
+
 app.addEventListener("click", (e) => {
   if (e.target.closest("[data-stop]")) return;
   const exp = e.target.closest("[data-expand]");
