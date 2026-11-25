@@ -28,14 +28,21 @@ const ago = (ms) => {
 };
 const short = (p) => (p ? p.replace(/^\/(Users|home)\/[^/]+/, "~").replace(/^[A-Za-z]:\\Users\\[^\\]+/, "~") : "");
 
-// VSCode で開くリンク。別端末のセッションは Remote-SSH（peers.json の ssh）で開く
-function vscodeHref(s) {
-  if (!s.cwd) return null;
+// VSCode で開くボタン。この端末のセッションは、サーバーに頼んでそのセッションのタブを開く（src/open.mjs）。
+// 別端末のセッションは Remote-SSH（peers.json の ssh）で作業フォルダを開く
+function vscodeButton(s) {
+  if (s.self) return `<button data-open="${esc(s.key)}" data-stop>VSCode ↗</button>`;
+  if (!s.ssh || !s.cwd) return "";
   let path = s.cwd.replace(/\\/g, "/");
   if (!path.startsWith("/")) path = "/" + path;
-  if (s.self) return `vscode://file${encodeURI(path)}`;
-  if (s.ssh) return `vscode://vscode-remote/ssh-remote+${encodeURIComponent(s.ssh)}${encodeURI(path)}`;
-  return null;
+  const href = `vscode://vscode-remote/ssh-remote+${encodeURIComponent(s.ssh)}${encodeURI(path)}`;
+  return `<a href="${esc(href)}" data-stop><button>VSCode ↗</button></a>`;
+}
+
+async function openSession(btn) {
+  const r = await fetch(`/api/sessions/${encodeURIComponent(btn.dataset.open)}/open`, { method: "POST", headers: { "x-cc-dash": "open" } }).catch(() => null);
+  btn.textContent = r?.ok ? "開きました" : "開けませんでした";
+  setTimeout(() => (btn.textContent = "VSCode ↗"), 2000);
 }
 const statusLabel = (s) => STATUS[s.status] + (s.reason && REASON[s.reason] ? `・${REASON[s.reason]}` : "");
 // ヘッダーの件数を押したときの絞り込み。件数と合わせるため、オフライン端末の分は外す
@@ -123,7 +130,6 @@ function card(s, list, dim = false) {
   const timeText =
     s.status === "waiting" ? `${ago(waitMs)}待ち` : s.status === "working" ? `${ago(waitMs)}経過` : s.status === "stalled" ? `${ago(waitMs)}動きなし` : hm(s.lastActivity);
 
-  const href = vscodeHref(s);
   return `<article class="card${dim || s.stale ? " dim" : ""}" data-go="#/s/${encodeURIComponent(s.key)}">
     <div class="row">
       <div style="min-width:0">
@@ -156,7 +162,7 @@ function card(s, list, dim = false) {
     </div>
     <div class="foot" style="border:0;padding-top:0;margin-top:6px">
       <span class="${s.closable.ok ? "close-ok" : "close-ng"}">${s.closable.ok ? "閉じてよい" : `まだ（${esc(s.closable.why)}）`}</span>
-      ${href ? `<a href="${esc(href)}" data-stop><button>VSCode ↗</button></a>` : ""}
+      ${vscodeButton(s)}
     </div>
   </article>`;
 }
@@ -208,7 +214,7 @@ function renderDetail(d, focus, list) {
     <div class="filters">
       <button id="fAll" class="${state.onlyImp ? "" : "on"}">全部</button>
       <button id="fImp" class="${state.onlyImp ? "on" : ""}">大事なことだけ</button>
-      ${vscodeHref(d) ? `<a href="${esc(vscodeHref(d))}" style="margin-left:auto"><button>VSCode ↗</button></a>` : ""}
+      <span style="margin-left:auto">${vscodeButton(d)}</span>
     </div>
     <div id="tl" class="${state.onlyImp ? "only-imp" : ""}">
       ${chapters}
@@ -270,6 +276,8 @@ summaryEl.addEventListener("click", (e) => {
 });
 
 app.addEventListener("click", (e) => {
+  const op = e.target.closest("[data-open]");
+  if (op) return openSession(op);
   if (e.target.closest("[data-stop]")) return;
   const exp = e.target.closest("[data-expand]");
   if (exp) return exp.classList.toggle("clamp");

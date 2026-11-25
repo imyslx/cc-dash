@@ -3,6 +3,7 @@
 //   GET /api/sessions       一覧（ハブなら全端末分をまとめる）
 //   GET /api/sessions/:key  詳細（別端末のものは中継する）
 //   GET /api/stream         変更通知（Server-Sent Events）
+//   POST /api/sessions/:key/open  そのセッションを VSCode で開く（この端末のセッションだけ。src/open.mjs）
 // ループバック以外からのアクセスにはトークンが要る（src/auth.mjs）。
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
@@ -11,11 +12,12 @@ import { fileURLToPath } from "node:url";
 import { config } from "./config.mjs";
 import { authorized, tokenFrom, COOKIE } from "./auth.mjs";
 import { mergeLists, splitKey } from "./merge.mjs";
+import { openUri, sessionUri } from "./open.mjs";
 
 const PUBLIC = join(dirname(fileURLToPath(import.meta.url)), "..", "public");
 const TYPES = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".svg": "image/svg+xml" };
 
-export function createApp(store, { peers = null, name = config.name, token = config.token } = {}) {
+export function createApp(store, { peers = null, name = config.name, token = config.token, open = openUri } = {}) {
   const clients = new Set();
   let version = 0;
   const notify = () => {
@@ -63,6 +65,16 @@ export function createApp(store, { peers = null, name = config.name, token = con
     }
 
     try {
+      const mOpen = p.match(/^\/api\/sessions\/([^/]+)\/open$/);
+      if (mOpen) {
+        // 別のサイトのページから勝手に呼ばれないよう、POST と専用ヘッダーを必須にする
+        // （専用ヘッダー付きの他サイトからの要求は、ブラウザが事前確認の段階で止める）
+        if (req.method !== "POST" || req.headers["x-cc-dash"] !== "open") return json(res, 405, { error: "method not allowed" });
+        const { peer, id } = splitKey(decodeURIComponent(mOpen[1]));
+        if (peer || !store.sessions.has(id)) return json(res, 404, { error: "not found" });
+        open(sessionUri(id));
+        return json(res, 200, { ok: true });
+      }
       if (p === "/api/sessions") return json(res, 200, list());
       if (p.startsWith("/api/sessions/")) {
         const d = await detail(decodeURIComponent(p.slice("/api/sessions/".length)));

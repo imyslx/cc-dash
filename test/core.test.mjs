@@ -139,6 +139,33 @@ test("ストア：今ここ・大事なこと・同名カードの見分け", as
   assert.ok(d.chapters[1].items.some((i) => i.type === "tools" && i.list.length >= 2));
 });
 
+test("VSCode で開く：この端末のセッションだけ、Claude Code 拡張の URI を OS に開かせる", async () => {
+  const { createApp } = await import("../src/server.mjs");
+  const store = new Store();
+  await store.poll();
+  const opened = [];
+  const srv = createApp(store, { name: "demo", open: (uri) => opened.push(uri) });
+  const port = await new Promise((r) => srv.listen(0, "127.0.0.1", () => r(srv.address().port)));
+  const url = (key) => `http://127.0.0.1:${port}/api/sessions/${encodeURIComponent(key)}/open`;
+  const post = (key, headers = { "x-cc-dash": "open" }) => fetch(url(key), { method: "POST", headers });
+  try {
+    const id = store.listView().sessions[0].id;
+    assert.equal((await post(id)).status, 200);
+    assert.deepEqual(opened, [`vscode://anthropic.claude-code/open?session=${id}`]);
+
+    // 別のサイトのページから勝手に呼ばれないよう、POST と専用ヘッダーが要る
+    assert.equal((await fetch(url(id))).status, 405);
+    assert.equal((await post(id, {})).status, 405);
+    // 別端末のセッションと、知らないセッションは開かない
+    assert.equal((await post(`Mac::${id}`)).status, 404);
+    assert.equal((await post("no-such-session")).status, 404);
+    assert.equal(opened.length, 1);
+  } finally {
+    srv.close();
+    srv.closeAllConnections?.();
+  }
+});
+
 test("Haiku の出力を JSON 配列として読む", () => {
   assert.deepEqual(parseHighlights('結果:\n[{"kind":"skip","text":"E2E未実行"},{"kind":"bogus","text":"x"}]'), [{ kind: "skip", text: "E2E未実行", by: "llm" }]);
   assert.deepEqual(parseHighlights("[]"), []);

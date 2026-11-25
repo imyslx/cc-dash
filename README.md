@@ -138,6 +138,7 @@ Claude Code ──(会話記録を書く)──▶ ~/.claude/projects/<project>/
 | `src/auth.mjs` | トークン認証（ループバックは素通し） |
 | `src/peers.mjs` | ハブ側：エージェントの購読と取得 |
 | `src/merge.mjs` | 自分と別端末のセッションを1つの一覧にまとめる |
+| `src/open.mjs` | VSCode ボタン：Claude Code 拡張の URI（`vscode://anthropic.claude-code/open?session=<ID>`）を OS に開かせる |
 | `public/` | 画面（素の HTML / CSS / JS） |
 
 設計の判断は [docs/adr/](docs/adr/) に、作った経緯は [docs/background.md](docs/background.md) にあります。
@@ -147,6 +148,6 @@ Claude Code ──(会話記録を書く)──▶ ~/.claude/projects/<project>/
 - 会話記録の形式は Claude Code の内部仕様で、公開された安定 API ではありません。バージョンアップで読めなくなる項目が出る可能性があります（読めない行は捨てて動き続けます）
 - `TaskCreate` / `TaskUpdate` 形式の Todo は、タスク番号が作成順の連番だという前提で追っています
 - ルールでの抽出は取りこぼしも誤検出もあります。精度が要るときは Haiku 分類を有効にしてください
-- VSCode ボタンは作業ディレクトリを開くだけで、特定のセッションのパネルは開きません
+- VSCode ボタンでそのセッションのタブを開けるのは、この端末のセッションだけです。別の端末のセッションは、Remote-SSH（`peers.json` の `ssh`）で作業フォルダを開くだけです
 - Windows 向けの修正（`claude.cmd` の起動、パスの表示、フックのコマンド、npm スクリプト）は入れていますが、実機の Windows ではまだ動作確認していません
 - 端末間の時計のずれは補正していますが、詳細画面の時刻はそれぞれの端末の時計のままです
