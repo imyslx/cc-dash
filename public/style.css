@@ -122,7 +122,7 @@ button.pin.on { color: var(--accent); background: transparent; border-color: tra
   height: calc(100vh - var(--top-h, 49px)); overflow-y: auto;
   padding: 12px 8px 24px; border-right: .5px solid var(--border);
 }
-.nav-item { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border-radius: var(--radius); font-size: 13px; }
+.nav-item { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border-radius: var(--radius); font-size: 12px; }
 .nav-item:hover { background: var(--neutral); }
 .nav-item.current { background: var(--neutral); font-weight: 600; }
 .nav-item.dim { opacity: .72; }
