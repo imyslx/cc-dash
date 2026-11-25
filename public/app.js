@@ -221,7 +221,7 @@ function renderDetail(d, focus, list) {
           : STATUS[d.status];
 
   app.innerHTML = `<div class="detail">
-    <a class="back" href="#/">← 一覧</a>
+    <div class="detail-bar"><a class="back" href="#/">← 一覧</a></div>
     <div class="row" style="margin-top:6px">
       <div style="min-width:0">
         <p class="title" style="font-size:18px">${esc(d.title)}</p>
