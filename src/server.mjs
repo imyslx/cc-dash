@@ -72,7 +72,13 @@ export function createApp(store, { peers = null, name = config.name, token = con
         if (req.method !== "POST" || req.headers["x-cc-dash"] !== "open") return json(res, 405, { error: "method not allowed" });
         const { peer, id } = splitKey(decodeURIComponent(mOpen[1]));
         if (peer || !store.sessions.has(id)) return json(res, 404, { error: "not found" });
-        open(sessionUri(id));
+        try {
+          await open(sessionUri(id));
+        } catch (e) {
+          console.warn(`[open] ${id} を開けませんでした: ${e.message}`);
+          return json(res, 500, { error: "could not open" });
+        }
+        console.log(`[open] ${id}`);
         return json(res, 200, { ok: true });
       }
       if (p === "/api/sessions") return json(res, 200, list());

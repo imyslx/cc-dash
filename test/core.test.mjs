@@ -164,6 +164,18 @@ test("VSCode で開く：この端末のセッションだけ、Claude Code 拡�
     srv.close();
     srv.closeAllConnections?.();
   }
+
+  // OS に開かせられなかったときは、受け付けたことにしない（画面に「開けませんでした」と出す）
+  const bad = createApp(store, { name: "demo", open: () => Promise.reject(new Error("spawn rundll32 ENOENT")) });
+  const badPort = await new Promise((r) => bad.listen(0, "127.0.0.1", () => r(bad.address().port)));
+  try {
+    const id = store.listView().sessions[0].id;
+    const r = await fetch(`http://127.0.0.1:${badPort}/api/sessions/${id}/open`, { method: "POST", headers: { "x-cc-dash": "open" } });
+    assert.equal(r.status, 500);
+  } finally {
+    bad.close();
+    bad.closeAllConnections?.();
+  }
 });
 
 test("Haiku の出力を JSON 配列として読む", () => {
