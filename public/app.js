@@ -48,8 +48,9 @@ const statusLabel = (s) => STATUS[s.status] + (s.reason && REASON[s.reason] ? `�
 // ヘッダーの件数を押したときの絞り込み。件数と合わせるため、オフライン端末の分は外す
 const visible = (list) => (state.filter ? list.sessions.filter((s) => s.status === state.filter && !s.stale) : list.sessions);
 const isRest = (s) => ["idle", "closed"].includes(s.status);
-// ピン留めしたものを、留めた順に並べる。新しく留めたものは後ろに足すので、すでに留めたものの位置は動かない
-const pinnedOf = (sessions) => sessions.filter((s) => s.pinned).sort((a, b) => a.pinnedAt - b.pinnedAt);
+// ピン留めしたものを、最終更新日時の新しい順に並べる（グリッドの左上が最新）。同じ時刻なら留めた順
+const pinnedOf = (sessions) =>
+  sessions.filter((s) => s.pinned).sort((a, b) => (b.lastActivity || 0) - (a.lastActivity || 0) || a.pinnedAt - b.pinnedAt);
 
 const PIN_SVG = `<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M10.2 1.3l4.5 4.5-1 1-1-.2-2.4 2.4.3 2.6-1 1-2.6-2.6-3.6 3.6H2.7v-.7l3.6-3.6-2.6-2.6 1-1 2.6.3 2.4-2.4-.2-1z"/></svg>`;
 function pinButton(s) {
